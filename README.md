@@ -86,6 +86,24 @@ poetry install
 
 ### Create and Run Tests 🧪
 
+For running the tests you should first install this two connectors at a virtualenv named venv
+The tests are configured pointing to this files, I could not find a versiod that would work
+at the same venv as the tap-airbyte-wrapper.
+
+Via poetry:
+
+```
+source_pokeapi = { git = "https://github.com/airbytehq/airbyte.git", subdirectory = "airbyte-integrations/connectors/source-pokeapi/", tag = "v0.50.34" }
+source_file = { git = "https://github.com/airbytehq/airbyte.git", subdirectory = "airbyte-integrations/connectors/source-file/", tag = "v0.50.34" }
+```
+
+Via pip:
+
+```
+pip install -e "git+https://github.com/airbytehq/airbyte.git#egg=source_pokeapi&subdirectory=airbyte-integrations/connectors/source-poke-api/"
+pip install -e "git+https://github.com/airbytehq/airbyte.git#egg=source_file&subdirectory=airbyte-integrations/connectors/source-file/"
+```
+
 Create tests within the `tap_airbyte/tests` subfolder and
   then run:
 

@@ -7,7 +7,7 @@ keywords = ["ELT", "Airbyte"]
 license = "Apache 2.0"
 
 [tool.poetry.dependencies]
-python = "<3.11,>=3.7.1"
+python = ">=3.8,<3.11"
 requests = "^2.25.1"
 singer-sdk = { version = "^0.14.0" }
 fs-s3fs = { version = "^1.1.1", optional = true }
@@ -22,8 +22,6 @@ pydocstyle = "^6.1.1"
 mypy = "^0.910"
 types-requests = "^2.26.1"
 isort = "^5.10.1"
-source_pokeapi = { git = "https://github.com/airbytehq/airbyte.git", subdirectory = "airbyte-integrations/connectors/source-pokeapi/" }
-source_file = { git = "https://github.com/airbytehq/airbyte.git", subdirectory = "airbyte-integrations/connectors/source-file/" }
 
 [tool.poetry.extras]
 s3 = ["fs-s3fs"]
