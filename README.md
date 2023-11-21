@@ -6,6 +6,8 @@
 <a href="https://github.com/psf/black"><img alt="Code style: black" src="https://img.shields.io/badge/code%20style-black-000000.svg"></a>
 </p>
 
+This is a fork of the original Tap-Airbyte-Wrapper which changes the implementation from using docker to running any executable configured at the current environment
+
 `tap-airbyte` is a Singer tap that wraps *all* Airbyte sources implicitly. This adds over 250 immediately usable extractors to the broader Singer ecosystem. This opens up high quality connectors for an expanded audience further democratizing ELT and encourages contributions upstream where system experts using an airbyte source via this wrapper may be inclined to contribute to the connector source, open issues, etc if it is the better option than what's available in the Singer catalog alone.
 
 Built with the [Meltano Tap SDK](https://sdk.meltano.com) for Singer Taps.
@@ -14,9 +16,8 @@ Built with the [Meltano Tap SDK](https://sdk.meltano.com) for Singer Taps.
 
 | Setting             | Required | Default | Description |
 |:--------------------|:--------:|:-------:|:------------|
-| airbyte_spec        | True     | None    | Specification for the Airbyte source connector. This is a JSON object minimally containing the `image` key. The `tag` key is optional and defaults to `latest`. |
+| airbyte_spec        | True     | None    | Specification for the Airbyte source connector. This is a JSON object containing only the path to the executable `airbyte_source_executable` key installed at the current environment, it can be a compound command such as 'python -m ..'  |
 | airbyte_config      | False    | None    | Configuration to pass through to the Airbyte source connector, this can be gleaned by running the the tap with the `--about` flag and the `--config` flag pointing to a file containing the `airbyte_spec` configuration. This is a JSON object. |
-| docker_mounts       | False    | None    | Docker mounts to mount to the container. Expects a list of maps containing source, target, and type as is documented in the docker --mount [documentation](https://docs.docker.com/storage/bind-mounts/#choose-the--v-or---mount-flag) |
 | stream_maps         | False    | None    | Config object for stream maps capability. For more information check out [Stream Maps](https://sdk.meltano.com/en/latest/stream_maps.html). |
 | stream_map_config   | False    | None    | User-defined config values to be used within map expressions. |
 | flattening_enabled  | False    | None    | 'True' to enable schema flattening and automatically expand nested properties. |
@@ -24,12 +25,6 @@ Built with the [Meltano Tap SDK](https://sdk.meltano.com) for Singer Taps.
 
 
 ### Configure using environment variables ✏️
-
-`OCI_RUNTIME` can be set to override the default of `docker`. This lets the tap work with podman, nerdctl, colima, and so on.
-
-```sh
-OCI_RUNTIME=nerdctl meltano run tap-pokeapi target-jsonl
-```
 
 This Singer tap will automatically import any environment variables within the working directory's
 `.env` if the `--config=ENV` is provided, such that config values will be considered if a matching
@@ -45,7 +40,7 @@ First, configure your tap by creating a configuration json file. In this example
 ```json
 {
   "airbyte_spec": {
-    "image": "source-github"
+    "airbyte_source_executable": "venv/bin/any-source"
   },
   "airbyte_config": {
     "credentials": {

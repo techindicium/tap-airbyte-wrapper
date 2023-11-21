@@ -38,6 +38,7 @@ from singer_sdk import typing as th
 from singer_sdk.cli import common_options
 from singer_sdk.helpers._classproperty import classproperty
 from singer_sdk.tap_base import CliTestOptionValue
+import shlex
 
 # Sentinel value for broken pipe
 PIPE_CLOSED = object()
@@ -101,7 +102,6 @@ REPLICATION_METHOD_MAP = {
 # We are piping to Singer targets, so this field is irrelevant
 NOOP_AIRBYTE_SYNC_MODE = "append"
 
-
 class TapAirbyte(Tap):
     name = "tap-airbyte"
     config_jsonschema = th.PropertiesList(
@@ -109,17 +109,17 @@ class TapAirbyte(Tap):
             "airbyte_spec",
             th.ObjectType(
                 th.Property(
-                    "image",
+                    "airbyte_source_executable",
                     th.StringType,
                     required=True,
-                    description="Airbyte image to run",
-                ),
-                th.Property("tag", th.StringType, required=False, default="latest"),
+                    description="Airbyte source executable to run",
+                )
             ),
             required=True,
             description=(
                 "Specification for the Airbyte source connector. This is a JSON object minimally"
-                " containing the `image` key. The `tag` key is optional and defaults to `latest`."
+                " containg the path to the executable of the source installed at your current "
+                "environment ."
             ),
         ),
         th.Property(
@@ -132,46 +132,11 @@ class TapAirbyte(Tap):
                 " to a file containing the `airbyte_spec` configuration. This is a JSON object."
             ),
         ),
-        th.Property(
-            "docker_mounts",
-            th.ArrayType(
-                th.ObjectType(
-                    th.Property(
-                        "source",
-                        th.StringType,
-                        required=True,
-                        description="Source path to mount",
-                    ),
-                    th.Property(
-                        "target",
-                        th.StringType,
-                        required=True,
-                        description="Target path to mount",
-                    ),
-                    th.Property(
-                        "type",
-                        th.StringType,
-                        default="bind",
-                        description="Type of mount",
-                    ),
-                )
-            ),
-            required=False,
-            description=(
-                "Docker mounts to make available to the Airbyte container. Expects a list of maps"
-                " containing source, target, and type as is documented in the docker --mount"
-                " documentation"
-            ),
-        ),
     ).to_dict()
     conf_dir: str = "/tmp"
     pipe_status = None
+    _airbyte_source_executable: Optional[str] = None
 
-    # Airbyte image to run
-    _image: Optional[str] = None
-    _tag: Optional[str] = None
-    _docker_mounts: Optional[List[Dict[str, str]]] = None
-    container_runtime = os.getenv("OCI_RUNTIME", "docker")
 
     # Airbyte -> Demultiplexer -< Singer Streams
     singer_consumers: List[Thread] = []
@@ -286,42 +251,28 @@ class TapAirbyte(Tap):
 
     def __init__(self, *args, **kwargs) -> None:
         # OCI check
-        self.logger.info("Checking for %s on PATH.", self.container_runtime)
-        if not shutil.which(self.container_runtime):
+        super().__init__(*args, **kwargs)
+        self.logger.info("Checking for %s on PATH.", str(self.airbyte_source_executable))
+        # Only testing first command if compound command
+        if not shutil.which(self.airbyte_source_executable[0]):
             self.logger.error(
                 "Could not find %s on PATH. Please verify that %s is installed and on PATH.",
-                self.container_runtime,
-                self.container_runtime,
+                str(self.airbyte_source_executable),
+                str(self.airbyte_source_executable),
             )
             sys.exit(1)
-        self.logger.info("Found %s on PATH.", self.container_runtime)
-        self.logger.info("Checking %s version.", self.container_runtime)
-        try:
-            subprocess.check_call([self.container_runtime, "version"], stdout=subprocess.DEVNULL)
-        except subprocess.CalledProcessError as e:
-            self.logger.error(
-                (
-                    "Failed to execute %s version with exit code %d. Please verify that %s is"
-                    " configured correctly."
-                ),
-                self.container_runtime,
-                e.returncode,
-                self.container_runtime,
-            )
-            sys.exit(1)
-        self.logger.info("Successfully executed %s version.", self.container_runtime)
-        # End OCI check
-        super().__init__(*args, **kwargs)
+        self.logger.info("Found %s on PATH.", str(self.airbyte_source_executable))
+        
 
     def run_help(self):
         subprocess.run(
-            ["docker", "run", f"{self.image}:{self.tag}", "--help"],
+            [self.airbyte_source_executable, "--help"],
             check=True,
         )
 
     def run_spec(self):
         proc = subprocess.run(
-            ["docker", "run", f"{self.image}:{self.tag}", "spec"],
+            [self.airbyte_source_executable, "spec"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
@@ -375,20 +326,11 @@ class TapAirbyte(Tap):
             with open(f"{tmpdir}/config.json", "wb") as f:
                 f.write(orjson.dumps(self.config.get("airbyte_config", {})))
             proc = subprocess.run(
+                self.airbyte_source_executable +
                 [
-                    "docker",
-                    "run",
-                    "--rm",
-                    "-i",
-                    "-v",
-                    f"{tmpdir}:{self.conf_dir}",
-                ]
-                + self.docker_mounts
-                + [
-                    f"{self.image}:{self.tag}",
                     "check",
                     "--config",
-                    f"{self.conf_dir}/config.json",
+                    f"{tmpdir}/config.json",
                 ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -443,24 +385,15 @@ class TapAirbyte(Tap):
                     self.logger.debug("Using state: %s", self.airbyte_state)
                     state.write(orjson.dumps(self.airbyte_state))
             proc = subprocess.Popen(
+                self.airbyte_source_executable +
                 [
-                    "docker",
-                    "run",
-                    "--rm",
-                    "-i",
-                    "-v",
-                    f"{tmpdir}:{self.conf_dir}",
-                ]
-                + self.docker_mounts
-                + [
-                    f"{self.image}:{self.tag}",
                     "read",
                     "--config",
-                    f"{self.conf_dir}/config.json",
+                    f"{tmpdir}/config.json",
                     "--catalog",
-                    f"{self.conf_dir}/catalog.json",
+                    f"{tmpdir}/catalog.json",
                 ]
-                + (["--state", f"{self.conf_dir}/state.json"] if self.airbyte_state else []),
+                + (["--state", f"{tmpdir}/state.json"] if self.airbyte_state else []),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
@@ -502,16 +435,16 @@ class TapAirbyte(Tap):
             self.logger.debug(airbyte_message["trace"])
 
     @property
-    def image(self) -> str:
-        if not self._image:
+    def airbyte_source_executable(self) -> str:
+        if not self._airbyte_source_executable:
             try:
-                self._image: str = self.config["airbyte_spec"]["image"]
+                self._airbyte_source_executable: str = shlex.split(self.config["airbyte_spec"]["airbyte_source_executable"])
             except KeyError:
                 raise AirbyteException(
                     "Airbyte spec is missing required fields. Please ensure you are passing"
                     " --config and that the passed config contains airbyte_spec."
                 ) from KeyError
-        return self._image
+        return self._airbyte_source_executable
 
     @property
     def tag(self) -> str:
@@ -526,44 +459,18 @@ class TapAirbyte(Tap):
         return self._tag
 
     @property
-    def docker_mounts(self) -> List[str]:
-        if not self._docker_mounts:
-            configured_mounts = []
-            mounts = self.config.get("docker_mounts", [])
-            mount: Dict[str, str]
-            for mount in mounts:
-                configured_mounts.extend(
-                    [
-                        "--mount",
-                        (
-                            f"source={mount['source']},target={mount['target']},type={mount.get('type', 'bind')}"
-                        ),
-                    ]
-                )
-            self._docker_mounts: List[str] = configured_mounts
-        return self._docker_mounts
-
-    @property
     @lru_cache
     def airbyte_catalog(self):
         with TemporaryDirectory() as tmpdir:
             with open(f"{tmpdir}/config.json", "wb") as f:
                 f.write(orjson.dumps(self.config.get("airbyte_config", {})))
+            
             proc = subprocess.run(
+                self.airbyte_source_executable + 
                 [
-                    "docker",
-                    "run",
-                    "--rm",
-                    "-i",
-                    "-v",
-                    f"{tmpdir}:{self.conf_dir}",
-                ]
-                + self.docker_mounts
-                + [
-                    f"{self.image}:{self.tag}",
                     "discover",
                     "--config",
-                    f"{self.conf_dir}/config.json",
+                    f"{tmpdir}/config.json",
                 ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,

@@ -23,7 +23,7 @@ def test_standard_tap_tests():
     tests = get_standard_tap_tests(
         TapAirbyte,
         config={
-            "airbyte_spec": {"image": "airbyte/source-pokeapi", "tag": "0.1.5"},
+            "airbyte_spec": {"airbyte_source_executable": "python venv/src/source-pokeapi/airbyte-integrations/connectors/source-pokeapi/main.py"},
             "airbyte_config": {
                 "pokemon_name": "infernape",
             },
