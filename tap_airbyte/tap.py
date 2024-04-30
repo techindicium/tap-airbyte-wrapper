@@ -463,6 +463,11 @@ class TapAirbyte(Tap):
     def airbyte_catalog(self):
         with TemporaryDirectory() as tmpdir:
             with open(f"{tmpdir}/config.json", "wb") as f:
+                airbyte_config = self.config.get("airbyte_config", {})
+                if isinstance(airbyte_config.get('repositories'), str):
+                    airbyte_config['repositories'] = [repo.strip() for repo in airbyte_config['repositories'].split(',') if repo.strip()]
+                if isinstance(airbyte_config.get('workspaces'), str):
+                    airbyte_config['workspaces'] = [workspace.strip() for workspace in airbyte_config['workspaces'].split(',') if workspace.strip()]
                 f.write(orjson.dumps(self.config.get("airbyte_config", {})))
             
             proc = subprocess.run(
